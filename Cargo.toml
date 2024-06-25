@@ -1,0 +1,9 @@
+[package]
+name = "sony-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+bluer = { version = "0.17.1", features = ["bluetoothd", "rfcomm"] }
+tokio = { version = "1.38.0", features = ["full"] }
