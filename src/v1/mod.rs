@@ -1,5 +1,61 @@
 #[derive(Debug)]
 #[repr(u8)]
+pub enum Datatype {
+    Ack = 0x1,
+    Command1 = 0x0c,
+    Command2 = 0x0e,
+    Unknown = 0xff,
+}
+
+impl From<u8> for Datatype {
+    fn from(value: u8) -> Self {
+        match (value) {
+            0x1 => Self::Ack,
+            0x0c => Self::Command1,
+            0x0e => Self::Command2,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Packet<P>
+where
+    P: Payload,
+{
+    pub data_type: Datatype,
+    pub seqnum: u8,
+    pub payload: P,
+}
+
+impl<P> Packet<P>
+where
+    P: Payload,
+{
+    pub fn write_into(self, buf: &mut [u8]) -> anyhow::Result<usize> {
+        // TODO invalid buffer size
+        buf[0] = 0x3e;
+        buf[1] = self.data_type as u8;
+        buf[2] = self.seqnum;
+        let size = self.payload.write_into(&mut buf[7..])?;
+        buf[3..7].copy_from_slice(&size.to_be_bytes());
+
+        let end = 7 + size as usize;
+
+        let checksum = buf[1..end]
+            .iter()
+            .fold(0, |acc: u8, x: &u8| acc.wrapping_add(*x));
+
+        buf[end] = checksum;
+
+        buf[end + 1] = 60;
+
+        Ok(end + 2)
+    }
+}
+
+#[derive(Debug)]
+#[repr(u8)]
 pub enum PayloadTypeCommand1 {
     InitRequest = 0x00,
     InitReply = 0x01,
@@ -77,7 +133,7 @@ pub enum PayloadTypeCommand1 {
 }
 
 #[derive(Debug)]
-pub struct AncPacket {
+pub struct AncPayload {
     pub anc_mode: AncMode,
     pub focus_on_voice: bool,
     pub ambiant_level: u8,
@@ -91,22 +147,13 @@ pub enum AncMode {
     Wind,
 }
 
-impl Into<[u8; 8]> for AncPacket {
-    fn into(self) -> [u8; 8] {
-        let mut res = [0; 8];
-
-        let _ = self.write_into(&mut res);
-
-        res
-    }
-}
-
 pub trait Payload {
     fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32>;
 }
 
-impl Payload for AncPacket {
+impl Payload for AncPayload {
     fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+        // TODO invalid buffer size
         buf[0] = PayloadTypeCommand1::AmbientSoundControlSet as u8;
         buf[1] = 0x02;
         buf[2] = if self.anc_mode == AncMode::Off {

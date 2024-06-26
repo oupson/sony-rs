@@ -7,3 +7,5 @@ edition = "2021"
 anyhow = "1.0.86"
 bluer = { version = "0.17.1", features = ["bluetoothd", "rfcomm"] }
 tokio = { version = "1.38.0", features = ["full"] }
+uuid = "1.9.1"
+futures = "0.3.30"
