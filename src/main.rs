@@ -13,7 +13,7 @@ use tokio::{
 
 mod v1;
 
-use v1::{AllPayload, AncPayload, Datatype, GetAnc, Packet, PayloadTypeCommand1};
+use v1::{AllPayload, AncPayload, Datatype, GetAnc, Packet, PayloadCommand1};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -40,12 +40,12 @@ async fn main() -> anyhow::Result<()> {
 
         let mut buffer = [0u8; 1024];
 
+        let mut ack_to_send = 0;
+
+        let mut seqnum = 0;
+
         {
-            let packet: Packet<&[u8]> = Packet {
-                data_type: Datatype::Command1,
-                seqnum: 0,
-                payload: &[PayloadTypeCommand1::InitRequest as u8, 0],
-            };
+            let packet = Packet::Command1(seqnum, PayloadCommand1::InitRequest);
 
             let size = packet.write_into(&mut buffer)?;
             println!("sending {:02x?}", &buffer[0..size]);
@@ -61,6 +61,14 @@ async fn main() -> anyhow::Result<()> {
                     println!("read : {:02x?}", &buffer[0..size]);
                     let packets = parse_packets(&buffer[0..size])?;
                     println!("{:02x?}", packets);
+
+                    for packet in packets {
+                        if !packet.is_ack() {
+                            ack_to_send += 1;
+                        }
+
+                        seqnum = packet.seqnum();
+                    }
                 }
                 Err(_) => {
                     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -68,12 +76,22 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
+        while ack_to_send > 0 {
+            let packet = Packet::Ack(seqnum);
+
+            let size = packet.write_into(&mut buffer)?;
+            println!("sending {:02x?}", &buffer[0..size]);
+
+            channel
+                .write(&buffer[0..size])
+                .await
+                .context("failed to send message")?;
+
+            ack_to_send -= 1;
+        }
+
         {
-            let packet = Packet {
-                data_type: Datatype::Command1,
-                seqnum: 0,
-                payload: GetAnc,
-            };
+            let packet = Packet::Command1(seqnum, PayloadCommand1::AmbientSoundControlGet);
 
             let size = packet.write_into(&mut buffer)?;
             println!("sending {:02x?}", &buffer[0..size]);
@@ -96,11 +114,7 @@ async fn main() -> anyhow::Result<()> {
             ambiant_level: 1,
         };
 
-        let packet = Packet {
-            data_type: Datatype::Command1,
-            seqnum: 0,
-            payload,
-        };
+        let packet = Packet::Command1(seqnum, PayloadCommand1::AmbientSoundControlSet(payload));
 
         let size = packet.write_into(&mut buffer)?;
         println!("sending {:02x?}", &buffer[0..size]);
@@ -122,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_packets(buf: &[u8]) -> anyhow::Result<Vec<Packet<AllPayload>>> {
+fn parse_packets(buf: &[u8]) -> anyhow::Result<Vec<Packet>> {
     let mut res = Vec::new();
     for msg in buf.split_inclusive(|c| *c == 60) {
         let packet = Packet::try_from(msg)?;
