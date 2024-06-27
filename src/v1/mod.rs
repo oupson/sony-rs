@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum Datatype {
     Ack = 0x1,
@@ -9,7 +9,7 @@ pub enum Datatype {
 
 impl From<u8> for Datatype {
     fn from(value: u8) -> Self {
-        match (value) {
+        match value {
             0x1 => Self::Ack,
             0x0c => Self::Command1,
             0x0e => Self::Command2,
@@ -51,6 +51,53 @@ where
         buf[end + 1] = 60;
 
         Ok(end + 2)
+    }
+}
+
+#[derive(Debug)]
+pub enum AllPayload<'a> {
+    Empty,
+    Unknown(&'a [u8]),
+}
+
+impl<'a> Payload for AllPayload<'a> {
+    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+        match self {
+            Self::Empty => Ok(0),
+            AllPayload::Unknown(b) => b.write_into(buf),
+        }
+    }
+}
+
+impl<'a> From<&'a [u8]> for AllPayload<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        match value[0] {
+            _ => Self::Unknown(value),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for Packet<AllPayload<'a>> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        // TODO HEADER / END / CHECKSUM
+        let command = Datatype::from(value[1]);
+        let seqnum = value[2];
+
+        let packet_size = u32::from_be_bytes(value[3..][0..4].try_into()?); // TODO
+
+        let payload_raw = &value[7..7 + packet_size as usize];
+
+        Ok(Packet {
+            data_type: command,
+            seqnum,
+            payload: if command != Datatype::Ack {
+                AllPayload::from(payload_raw)
+            } else {
+                AllPayload::Empty
+            },
+        })
     }
 }
 
@@ -181,5 +228,23 @@ impl Payload for &[u8] {
     fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
         buf[0..self.len()].copy_from_slice(self);
         Ok(self.len() as u32)
+    }
+}
+
+impl Payload for () {
+    fn write_into(&self, _: &mut [u8]) -> anyhow::Result<u32> {
+        Ok(0)
+    }
+}
+
+#[derive(Debug)]
+pub struct GetAnc;
+
+impl Payload for GetAnc {
+    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+        buf[0] = PayloadTypeCommand1::AmbientSoundControlGet as u8;
+        buf[1] = 0x02;
+
+        Ok(2)
     }
 }
