@@ -1,45 +1,31 @@
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[repr(u8)]
-pub enum Datatype {
-    Ack = 0x1,
-    Command1 = 0x0c,
-    Command2 = 0x0e,
-    Unknown = 0xff,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Packet {
+    pub seqnum: u8,
+    pub content: PacketContent,
 }
 
-impl From<u8> for Datatype {
-    fn from(value: u8) -> Self {
-        match value {
-            0x1 => Self::Ack,
-            0x0c => Self::Command1,
-            0x0e => Self::Command2,
-            _ => Self::Unknown,
-        }
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum PacketContent {
+    Ack,
+    Command1(PayloadCommand1),
+    Command2,
+}
+
+impl Packet {
+    pub fn new(seqnum: u8, content: PacketContent) -> Self {
+        Self { seqnum, content }
     }
-}
 
-#[derive(Debug)]
-pub enum Packet<'a> {
-    Ack(u8),
-    Command1(u8, PayloadCommand1<'a>),
-    Command2(u8),
-}
-
-impl<'a> Packet<'a> {
     pub fn seqnum(&self) -> u8 {
-        match self {
-            Packet::Ack(s) => *s,
-            Packet::Command1(s, _) => *s,
-            Packet::Command2(s) => *s,
-        }
+        self.seqnum
     }
 
     pub fn write_into(self, buf: &mut [u8]) -> anyhow::Result<usize> {
         buf[0] = 0x3e;
-        buf[1] = match self {
-            Packet::Ack(_) => 0x01,
-            Packet::Command1(_, _) => 0x0c,
-            Packet::Command2(_) => 0xe,
+        buf[1] = match self.content {
+            PacketContent::Ack => 0x01,
+            PacketContent::Command1(_) => 0x0c,
+            PacketContent::Command2 => 0xe,
         };
 
         buf[2] = self.seqnum();
@@ -60,130 +46,130 @@ impl<'a> Packet<'a> {
     }
 
     pub fn is_ack(&self) -> bool {
-        if let Packet::Ack(_) = self {
-            true
-        } else {
-            false
-        }
+        PacketContent::Ack == self.content
     }
 
     fn write_payload(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
-        match self {
-            Packet::Ack(_) => Ok(0),
-            Packet::Command1(_, p) => p.write_into(buf),
-            Packet::Command2(_) => todo!(),
+        match &self.content {
+            PacketContent::Ack => Ok(0),
+            PacketContent::Command1(p) => p.write_into(buf),
+            PacketContent::Command2 => todo!(),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum PayloadCommand1<'a> {
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[allow(dead_code)]
+pub enum PayloadCommand1 {
     InitRequest,
-    InitReply(&'a [u8]),
+    InitReply([u8; 3]),
 
-    FwVersionRequest(&'a [u8]),
-    FwVersionReply(&'a [u8]),
+    FwVersionRequest,
+    FwVersionReply,
 
-    Init2Request(&'a [u8]),
-    Init2Reply(&'a [u8]),
+    Init2Request,
+    Init2Reply,
 
-    BatteryLevelRequest(&'a [u8]),
-    BatteryLevelReply(&'a [u8]),
-    BatteryLevelNotify(&'a [u8]),
+    BatteryLevelRequest,
+    BatteryLevelReply,
+    BatteryLevelNotify,
 
-    AudioCodecRequest(&'a [u8]),
-    AudioCodecReply(&'a [u8]),
-    AudioCodecNotify(&'a [u8]),
+    AudioCodecRequest,
+    AudioCodecReply,
+    AudioCodecNotify,
 
-    PowerOff(&'a [u8]),
+    PowerOff,
 
-    SoundPositionOrModeGet(&'a [u8]),
-    SoundPositionOrModeRet(&'a [u8]),
-    SoundPositionOrModeSet(&'a [u8]),
-    SoundPositionOrModeNotify(&'a [u8]),
+    SoundPositionOrModeGet,
+    SoundPositionOrModeRet,
+    SoundPositionOrModeSet,
+    SoundPositionOrModeNotify,
 
-    EqualizerGet(&'a [u8]),
-    EqualizerRet(&'a [u8]),
-    EqualizerSet(&'a [u8]),
-    EqualizerNotify(&'a [u8]),
+    EqualizerGet,
+    EqualizerRet,
+    EqualizerSet,
+    EqualizerNotify,
 
     AmbientSoundControlGet,
     AmbientSoundControlRet(AncPayload),
     AmbientSoundControlSet(AncPayload),
     AmbientSoundControlNotify(AncPayload),
 
-    VolumeGet(&'a [u8]),
-    VolumeRet(&'a [u8]),
-    VolumeSet(&'a [u8]),
-    VolumeNotify(&'a [u8]),
+    VolumeGet,
+    VolumeRet,
+    VolumeSet,
+    VolumeNotify,
 
-    NoiseCancellingOptimizerStart(&'a [u8]),
-    NoiseCancellingOptimizerStatus(&'a [u8]),
+    NoiseCancellingOptimizerStart,
+    NoiseCancellingOptimizerStatus,
 
-    NoiseCancellingOptimizerStateGet(&'a [u8]),
-    NoiseCancellingOptimizerStateRet(&'a [u8]),
-    NoiseCancellingOptimizerStateNotify(&'a [u8]),
+    NoiseCancellingOptimizerStateGet,
+    NoiseCancellingOptimizerStateRet,
+    NoiseCancellingOptimizerStateNotify,
 
-    TouchSensorGet(&'a [u8]),
-    TouchSensorRet(&'a [u8]),
-    TouchSensorSet(&'a [u8]),
-    TouchSensorNotify(&'a [u8]),
+    TouchSensorGet,
+    TouchSensorRet,
+    TouchSensorSet,
+    TouchSensorNotify,
 
-    AudioUpsamplingGet(&'a [u8]),
-    AudioUpsamplingRet(&'a [u8]),
-    AudioUpsamplingSet(&'a [u8]),
-    AudioUpsamplingNotify(&'a [u8]),
+    AudioUpsamplingGet,
+    AudioUpsamplingRet,
+    AudioUpsamplingSet,
+    AudioUpsamplingNotify,
 
-    AutomaticPowerOffButtonModeGet(&'a [u8]),
-    AutomaticPowerOffButtonModeRet(&'a [u8]),
-    AutomaticPowerOffButtonModeSet(&'a [u8]),
-    AutomaticPowerOffButtonModeNotify(&'a [u8]),
+    AutomaticPowerOffButtonModeGet,
+    AutomaticPowerOffButtonModeRet,
+    AutomaticPowerOffButtonModeSet,
+    AutomaticPowerOffButtonModeNotify,
 
-    SpeakToChatConfigGet(&'a [u8]),
-    SpeakToChatConfigRet(&'a [u8]),
-    SpeakToChatConfigSet(&'a [u8]),
-    SpeakToChatConfigNotify(&'a [u8]),
+    SpeakToChatConfigGet,
+    SpeakToChatConfigRet,
+    SpeakToChatConfigSet,
+    SpeakToChatConfigNotify,
 
-    JsonGet(&'a [u8]),
-    JsonRet(&'a [u8]),
+    JsonGet,
+    JsonRet,
 
-    SomethingGet(&'a [u8]),
-    SomethingRet(&'a [u8]),
+    SomethingGet,
+    SomethingRet,
 }
 
-impl<'a> TryFrom<&'a [u8]> for PayloadCommand1<'a> {
+impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
     type Error = anyhow::Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         match value[0] {
             0x00 => Ok(Self::InitRequest),
-            0x01 => Ok(Self::InitReply(&value[1..])),
+            0x01 => {
+                assert!(value.len() > 3);
+                Ok(Self::InitReply([value[1], value[2], value[3]]))
+            }
 
-            0x04 => Ok(Self::FwVersionRequest(&value[1..])),
-            0x05 => Ok(Self::FwVersionReply(&value[1..])),
+            0x04 => todo!("Self::FwVersionRequest"),
+            0x05 => todo!("Self::FwVersionReply"),
 
-            0x06 => Ok(Self::Init2Request(&value[1..])),
-            0x07 => Ok(Self::Init2Reply(&value[1..])),
+            0x06 => todo!("Self::Init2Request"),
+            0x07 => todo!("Self::Init2Reply"),
 
-            0x10 => Ok(Self::BatteryLevelRequest(&value[1..])),
-            0x11 => Ok(Self::BatteryLevelReply(&value[1..])),
-            0x13 => Ok(Self::BatteryLevelNotify(&value[1..])),
+            0x10 => todo!("Self::BatteryLevelRequest"),
+            0x11 => todo!("Self::BatteryLevelReply"),
+            0x13 => todo!("Self::BatteryLevelNotify"),
 
-            0x18 => Ok(Self::AudioCodecRequest(&value[1..])),
-            0x19 => Ok(Self::AudioCodecReply(&value[1..])),
-            0x1b => Ok(Self::AudioCodecNotify(&value[1..])),
+            0x18 => todo!("Self::AudioCodecRequest"),
+            0x19 => todo!("Self::AudioCodecReply"),
+            0x1b => todo!("Self::AudioCodecNotify"),
 
-            0x22 => Ok(Self::PowerOff(&value[1..])),
+            0x22 => todo!("Self::PowerOff"),
 
-            0x46 => Ok(Self::SoundPositionOrModeGet(&value[1..])),
-            0x47 => Ok(Self::SoundPositionOrModeRet(&value[1..])),
-            0x48 => Ok(Self::SoundPositionOrModeSet(&value[1..])),
-            0x49 => Ok(Self::SoundPositionOrModeNotify(&value[1..])),
+            0x46 => todo!("Self::SoundPositionOrModeGet"),
+            0x47 => todo!("Self::SoundPositionOrModeRet"),
+            0x48 => todo!("Self::SoundPositionOrModeSet"),
+            0x49 => todo!("Self::SoundPositionOrModeNotify"),
 
-            0x56 => Ok(Self::EqualizerGet(&value[1..])),
-            0x57 => Ok(Self::EqualizerRet(&value[1..])),
-            0x58 => Ok(Self::EqualizerSet(&value[1..])),
-            0x59 => Ok(Self::EqualizerNotify(&value[1..])),
+            0x56 => todo!("Self::EqualizerGet"),
+            0x57 => todo!("Self::EqualizerRet"),
+            0x58 => todo!("Self::EqualizerSet"),
+            0x59 => todo!("Self::EqualizerNotify"),
 
             0x66 => Ok(Self::AmbientSoundControlGet),
             0x67 => Ok(Self::AmbientSoundControlRet(AncPayload::try_from(
@@ -196,43 +182,43 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1<'a> {
                 &value[1..],
             )?)),
 
-            0xa6 => Ok(Self::VolumeGet(&value[1..])),
-            0xa7 => Ok(Self::VolumeRet(&value[1..])),
-            0xa8 => Ok(Self::VolumeSet(&value[1..])),
-            0xa9 => Ok(Self::VolumeNotify(&value[1..])),
+            0xa6 => todo!("Self::VolumeGet"),
+            0xa7 => todo!("Self::VolumeRet"),
+            0xa8 => todo!("Self::VolumeSet"),
+            0xa9 => todo!("Self::VolumeNotify"),
 
-            0x84 => Ok(Self::NoiseCancellingOptimizerStart(&value[1..])),
-            0x85 => Ok(Self::NoiseCancellingOptimizerStatus(&value[1..])),
+            0x84 => todo!("Self::NoiseCancellingOptimizerStart"),
+            0x85 => todo!("Self::NoiseCancellingOptimizerStatus"),
 
-            0x86 => Ok(Self::NoiseCancellingOptimizerStateGet(&value[1..])),
-            0x87 => Ok(Self::NoiseCancellingOptimizerStateRet(&value[1..])),
-            0x89 => Ok(Self::NoiseCancellingOptimizerStateNotify(&value[1..])),
+            0x86 => todo!("Self::NoiseCancellingOptimizerStateGet"),
+            0x87 => todo!("Self::NoiseCancellingOptimizerStateRet"),
+            0x89 => todo!("Self::NoiseCancellingOptimizerStateNotify"),
 
-            0xd6 => Ok(Self::TouchSensorGet(&value[1..])),
-            0xd7 => Ok(Self::TouchSensorRet(&value[1..])),
-            0xd8 => Ok(Self::TouchSensorSet(&value[1..])),
-            0xd9 => Ok(Self::TouchSensorNotify(&value[1..])),
+            0xd6 => todo!("Self::TouchSensorGet"),
+            0xd7 => todo!("Self::TouchSensorRet"),
+            0xd8 => todo!("Self::TouchSensorSet"),
+            0xd9 => todo!("Self::TouchSensorNotify"),
 
-            0xe6 => Ok(Self::AudioUpsamplingGet(&value[1..])),
-            0xe7 => Ok(Self::AudioUpsamplingRet(&value[1..])),
-            0xe8 => Ok(Self::AudioUpsamplingSet(&value[1..])),
-            0xe9 => Ok(Self::AudioUpsamplingNotify(&value[1..])),
+            0xe6 => todo!("Self::AudioUpsamplingGet"),
+            0xe7 => todo!("Self::AudioUpsamplingRet"),
+            0xe8 => todo!("Self::AudioUpsamplingSet"),
+            0xe9 => todo!("Self::AudioUpsamplingNotify"),
 
-            0xf6 => Ok(Self::AutomaticPowerOffButtonModeGet(&value[1..])),
-            0xf7 => Ok(Self::AutomaticPowerOffButtonModeRet(&value[1..])),
-            0xf8 => Ok(Self::AutomaticPowerOffButtonModeSet(&value[1..])),
-            0xf9 => Ok(Self::AutomaticPowerOffButtonModeNotify(&value[1..])),
+            0xf6 => todo!("Self::AutomaticPowerOffButtonModeGet"),
+            0xf7 => todo!("Self::AutomaticPowerOffButtonModeRet"),
+            0xf8 => todo!("Self::AutomaticPowerOffButtonModeSet"),
+            0xf9 => todo!("Self::AutomaticPowerOffButtonModeNotify"),
 
-            0xfa => Ok(Self::SpeakToChatConfigGet(&value[1..])),
-            0xfb => Ok(Self::SpeakToChatConfigRet(&value[1..])),
-            0xfc => Ok(Self::SpeakToChatConfigSet(&value[1..])),
-            0xfd => Ok(Self::SpeakToChatConfigNotify(&value[1..])),
+            0xfa => todo!("Self::SpeakToChatConfigGet"),
+            0xfb => todo!("Self::SpeakToChatConfigRet"),
+            0xfc => todo!("Self::SpeakToChatConfigSet"),
+            0xfd => todo!("Self::SpeakToChatConfigNotify"),
 
-            0xc4 => Ok(Self::JsonGet(&value[1..])),
-            0xc9 => Ok(Self::JsonRet(&value[1..])),
+            0xc4 => todo!("Self::JsonGet"),
+            0xc9 => todo!("Self::JsonRet"),
 
-            0x90 => Ok(Self::SomethingGet(&value[1..])),
-            0x91 => Ok(Self::SomethingRet(&value[1..])),
+            0x90 => todo!("Self::SomethingGet"),
+            0x91 => todo!("Self::SomethingRet"),
             v => Err(anyhow::format_err!(
                 "unknown payload for command1 : {:02x?}",
                 v
@@ -241,7 +227,7 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1<'a> {
     }
 }
 
-impl<'a> Payload for PayloadCommand1<'a> {
+impl<'a> Payload for PayloadCommand1 {
     fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
         match self {
             Self::InitRequest => {
@@ -249,113 +235,30 @@ impl<'a> Payload for PayloadCommand1<'a> {
                 buf[1] = 0x00;
                 Ok(2)
             }
-            Self::InitReply(v) => {
+            Self::InitReply(b) => {
                 buf[0] = 0x01;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
+                buf[1..4].copy_from_slice(b);
+                Ok(4)
             }
-
-            Self::FwVersionRequest(v) => {
-                buf[0] = 0x04;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::FwVersionReply(v) => {
-                buf[0] = 0x05;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::Init2Request(v) => {
-                buf[0] = 0x06;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::Init2Reply(v) => {
-                buf[0] = 0x07;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::BatteryLevelRequest(v) => {
-                buf[0] = 0x10;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::BatteryLevelReply(v) => {
-                buf[0] = 0x11;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::BatteryLevelNotify(v) => {
-                buf[0] = 0x13;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::AudioCodecRequest(v) => {
-                buf[0] = 0x18;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AudioCodecReply(v) => {
-                buf[0] = 0x19;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AudioCodecNotify(v) => {
-                buf[0] = 0x1b;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::PowerOff(v) => {
-                buf[0] = 0x22;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::SoundPositionOrModeGet(v) => {
-                buf[0] = 0x46;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SoundPositionOrModeRet(v) => {
-                buf[0] = 0x47;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SoundPositionOrModeSet(v) => {
-                buf[0] = 0x48;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SoundPositionOrModeNotify(v) => {
-                buf[0] = 0x49;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::EqualizerGet(v) => {
-                buf[0] = 0x56;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::EqualizerRet(v) => {
-                buf[0] = 0x57;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::EqualizerSet(v) => {
-                buf[0] = 0x58;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::EqualizerNotify(v) => {
-                buf[0] = 0x59;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
+            Self::FwVersionRequest => todo!("0x04"),
+            Self::FwVersionReply => todo!("0x05"),
+            Self::Init2Request => todo!("0x06"),
+            Self::Init2Reply => todo!("0x07"),
+            Self::BatteryLevelRequest => todo!("0x10"),
+            Self::BatteryLevelReply => todo!("0x11"),
+            Self::BatteryLevelNotify => todo!("0x13"),
+            Self::AudioCodecRequest => todo!("0x18"),
+            Self::AudioCodecReply => todo!("0x19"),
+            Self::AudioCodecNotify => todo!("0x1b"),
+            Self::PowerOff => todo!("0x22"),
+            Self::SoundPositionOrModeGet => todo!("0x46"),
+            Self::SoundPositionOrModeRet => todo!("0x47"),
+            Self::SoundPositionOrModeSet => todo!("0x48"),
+            Self::SoundPositionOrModeNotify => todo!("0x49"),
+            Self::EqualizerGet => todo!("0x56"),
+            Self::EqualizerRet => todo!("0x57"),
+            Self::EqualizerSet => todo!("0x58"),
+            Self::EqualizerNotify => todo!("0x59"),
 
             Self::AmbientSoundControlGet => {
                 buf[0] = 0x66;
@@ -378,189 +281,40 @@ impl<'a> Payload for PayloadCommand1<'a> {
                 let len = v.write_into(&mut buf[1..])?;
                 Ok((len + 1) as u32)
             }
-
-            Self::VolumeGet(v) => {
-                buf[0] = 0xa6;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::VolumeRet(v) => {
-                buf[0] = 0xa7;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::VolumeSet(v) => {
-                buf[0] = 0xa8;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::VolumeNotify(v) => {
-                buf[0] = 0xa9;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::NoiseCancellingOptimizerStart(v) => {
-                buf[0] = 0x84;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::NoiseCancellingOptimizerStatus(v) => {
-                buf[0] = 0x85;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::NoiseCancellingOptimizerStateGet(v) => {
-                buf[0] = 0x86;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::NoiseCancellingOptimizerStateRet(v) => {
-                buf[0] = 0x87;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::NoiseCancellingOptimizerStateNotify(v) => {
-                buf[0] = 0x89;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::TouchSensorGet(v) => {
-                buf[0] = 0xd6;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::TouchSensorRet(v) => {
-                buf[0] = 0xd7;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::TouchSensorSet(v) => {
-                buf[0] = 0xd8;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::TouchSensorNotify(v) => {
-                buf[0] = 0xd9;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::AudioUpsamplingGet(v) => {
-                buf[0] = 0xe6;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AudioUpsamplingRet(v) => {
-                buf[0] = 0xe7;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AudioUpsamplingSet(v) => {
-                buf[0] = 0xe8;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AudioUpsamplingNotify(v) => {
-                buf[0] = 0xe9;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::AutomaticPowerOffButtonModeGet(v) => {
-                buf[0] = 0xf6;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AutomaticPowerOffButtonModeRet(v) => {
-                buf[0] = 0xf7;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AutomaticPowerOffButtonModeSet(v) => {
-                buf[0] = 0xf8;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::AutomaticPowerOffButtonModeNotify(v) => {
-                buf[0] = 0xf9;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::SpeakToChatConfigGet(v) => {
-                buf[0] = 0xfa;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SpeakToChatConfigRet(v) => {
-                buf[0] = 0xfb;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SpeakToChatConfigSet(v) => {
-                buf[0] = 0xfc;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SpeakToChatConfigNotify(v) => {
-                buf[0] = 0xfd;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::JsonGet(v) => {
-                buf[0] = 0xc4;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::JsonRet(v) => {
-                buf[0] = 0xc9;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-
-            Self::SomethingGet(v) => {
-                buf[0] = 0x90;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
-            Self::SomethingRet(v) => {
-                buf[0] = 0x91;
-                buf[1..1 + v.len()].copy_from_slice(v);
-                Ok((v.len() + 1) as u32)
-            }
+            Self::VolumeGet => todo!("0xa6"),
+            Self::VolumeRet => todo!("0xa7"),
+            Self::VolumeSet => todo!("0xa8"),
+            Self::VolumeNotify => todo!("0xa9"),
+            Self::NoiseCancellingOptimizerStart => todo!("0x84"),
+            Self::NoiseCancellingOptimizerStatus => todo!("0x85"),
+            Self::NoiseCancellingOptimizerStateGet => todo!("0x86"),
+            Self::NoiseCancellingOptimizerStateRet => todo!("0x87"),
+            Self::NoiseCancellingOptimizerStateNotify => todo!("0x89"),
+            Self::TouchSensorGet => todo!("0xd6"),
+            Self::TouchSensorRet => todo!("0xd7"),
+            Self::TouchSensorSet => todo!("0xd8"),
+            Self::TouchSensorNotify => todo!("0xd9"),
+            Self::AudioUpsamplingGet => todo!("0xe6"),
+            Self::AudioUpsamplingRet => todo!("0xe7"),
+            Self::AudioUpsamplingSet => todo!("0xe8"),
+            Self::AudioUpsamplingNotify => todo!("0xe9"),
+            Self::AutomaticPowerOffButtonModeGet => todo!("0xf6"),
+            Self::AutomaticPowerOffButtonModeRet => todo!("0xf7"),
+            Self::AutomaticPowerOffButtonModeSet => todo!("0xf8"),
+            Self::AutomaticPowerOffButtonModeNotify => todo!("0xf9"),
+            Self::SpeakToChatConfigGet => todo!("0xfa"),
+            Self::SpeakToChatConfigRet => todo!("0xfb"),
+            Self::SpeakToChatConfigSet => todo!("0xfc"),
+            Self::SpeakToChatConfigNotify => todo!("0xfd"),
+            Self::JsonGet => todo!("0xc4"),
+            Self::JsonRet => todo!("0xc9"),
+            Self::SomethingGet => todo!("0x90"),
+            Self::SomethingRet => todo!("0x91"),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum AllPayload<'a> {
-    Empty,
-    Unknown(&'a [u8]),
-}
-
-impl<'a> Payload for AllPayload<'a> {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
-        match self {
-            Self::Empty => Ok(0),
-            AllPayload::Unknown(b) => b.write_into(buf),
-        }
-    }
-}
-
-impl<'a> From<&'a [u8]> for AllPayload<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        match value[0] {
-            //  (PayloadTypeCommand1::AmbientSoundControlRet as u8) => Self::Unknown(value),
-            _ => Self::Unknown(value),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for Packet<'a> {
+impl<'a> TryFrom<&'a [u8]> for Packet {
     type Error = anyhow::Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
@@ -569,8 +323,8 @@ impl<'a> TryFrom<&'a [u8]> for Packet<'a> {
         //
         let seqnum = value[2];
 
-        return match value[1] {
-            0x1 => Ok(Packet::Ack(seqnum)),
+        let content = match value[1] {
+            0x1 => PacketContent::Ack,
             0x0c => {
                 let packet_size = u32::from_be_bytes(value[3..][0..4].try_into()?); // TODO
 
@@ -578,22 +332,24 @@ impl<'a> TryFrom<&'a [u8]> for Packet<'a> {
 
                 let payload = PayloadCommand1::try_from(payload_raw)?;
 
-                Ok(Packet::Command1(seqnum, payload))
+                PacketContent::Command1(payload)
             }
-            0x0e => Ok(Packet::Command2(seqnum)),
+            0x0e => PacketContent::Command2,
             _ => todo!(),
         };
+
+        Ok(Packet { seqnum, content })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AncPayload {
     pub anc_mode: AncMode,
     pub focus_on_voice: bool,
     pub ambiant_level: u8,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum AncMode {
     Off,
     AmbiantMode,

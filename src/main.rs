@@ -1,22 +1,23 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::Context;
 use bluer::{
     agent::Agent,
     rfcomm::{Profile, Role},
 };
 use futures::StreamExt;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    time::timeout,
-};
+use sony_device::SonyDevice;
+use tracing::{info, trace};
 
+mod device_session;
+mod sony_device;
 mod v1;
 
-use v1::{AllPayload, AncPayload, Datatype, GetAnc, Packet, PayloadCommand1};
+use v1::{AncMode, AncPayload, PacketContent, PayloadCommand1};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
     let session = bluer::Session::new().await?;
 
     let agent = Agent::default();
@@ -36,112 +37,64 @@ async fn main() -> anyhow::Result<()> {
     let request = hndl.next().await;
 
     if let Some(r) = request {
-        let mut channel = r.accept()?;
+        let channel = r.accept()?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let mut buffer = [0u8; 1024];
+        let device = Arc::new(SonyDevice::new(channel));
 
-        let mut ack_to_send = 0;
+        let mut receiver = {
+            let device = device.clone();
+            let (sender, receiver) = tokio::sync::broadcast::channel(1);
 
-        let mut seqnum = 0;
+            tokio::spawn(async move {
+                device.run(sender).await.unwrap();
+            });
 
-        {
-            let packet = Packet::Command1(seqnum, PayloadCommand1::InitRequest);
-
-            let size = packet.write_into(&mut buffer)?;
-            println!("sending {:02x?}", &buffer[0..size]);
-
-            channel
-                .write(&buffer[0..size])
-                .await
-                .context("failed to send message")?;
-
-            match timeout(Duration::from_secs(1), channel.read(&mut buffer)).await {
-                Ok(r) => {
-                    let size = r?;
-                    println!("read : {:02x?}", &buffer[0..size]);
-                    let packets = parse_packets(&buffer[0..size])?;
-                    println!("{:02x?}", packets);
-
-                    for packet in packets {
-                        if !packet.is_ack() {
-                            ack_to_send += 1;
-                        }
-
-                        seqnum = packet.seqnum();
-                    }
-                }
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                }
-            }
-        }
-
-        while ack_to_send > 0 {
-            let packet = Packet::Ack(seqnum);
-
-            let size = packet.write_into(&mut buffer)?;
-            println!("sending {:02x?}", &buffer[0..size]);
-
-            channel
-                .write(&buffer[0..size])
-                .await
-                .context("failed to send message")?;
-
-            ack_to_send -= 1;
-        }
-
-        {
-            let packet = Packet::Command1(seqnum, PayloadCommand1::AmbientSoundControlGet);
-
-            let size = packet.write_into(&mut buffer)?;
-            println!("sending {:02x?}", &buffer[0..size]);
-
-            channel
-                .write(&buffer[0..size])
-                .await
-                .context("failed to send message")?;
-
-            let size = timeout(Duration::from_secs(1), channel.read(&mut buffer)).await??;
-            println!("read : {:02x?}", &buffer[0..size]);
-
-            let packets = parse_packets(&buffer[0..size])?;
-            println!("{:02x?}", packets);
-        }
-
-        let payload = AncPayload {
-            anc_mode: v1::AncMode::On,
-            focus_on_voice: false,
-            ambiant_level: 1,
+            receiver
         };
 
-        let packet = Packet::Command1(seqnum, PayloadCommand1::AmbientSoundControlSet(payload));
+        let res = device
+            .send(PacketContent::Command1(PayloadCommand1::InitRequest))
+            .await?;
 
-        let size = packet.write_into(&mut buffer)?;
-        println!("sending {:02x?}", &buffer[0..size]);
+        trace!("InitRequest = {:?}", res);
 
-        channel
-            .write(&buffer[0..size])
-            .await
-            .context("failed to send message")?;
+        let res = device
+            .send(PacketContent::Command1(
+                PayloadCommand1::AmbientSoundControlGet,
+            ))
+            .await?;
 
-        let size = timeout(Duration::from_secs(1), channel.read(&mut buffer)).await??;
-        println!("read : {:02x?}", &buffer[0..size]);
+        trace!("AmbientSoundControlGet = {:?}", res);
 
-        let packets = parse_packets(&buffer[0..size])?;
-        println!("{:02x?}", packets);
+        let anc_mode =
+            if let PacketContent::Command1(PayloadCommand1::AmbientSoundControlRet(res)) =
+                res.content
+            {
+                res
+            } else {
+                todo!()
+            };
 
-        channel.shutdown().await?;
+        let res = device
+            .send(PacketContent::Command1(
+                PayloadCommand1::AmbientSoundControlSet(AncPayload {
+                    anc_mode: if anc_mode.anc_mode == AncMode::Off {
+                        AncMode::On
+                    } else {
+                        AncMode::Off
+                    },
+                    focus_on_voice: false,
+                    ambiant_level: 0,
+                }),
+            ))
+            .await?;
+
+        trace!("AmbientSoundControlSet = {:?}", res);
+
+        while let Ok(event) = receiver.recv().await {
+            info!("new event : {:?}", event);
+        }
     }
-
     Ok(())
-}
-
-fn parse_packets(buf: &[u8]) -> anyhow::Result<Vec<Packet>> {
-    let mut res = Vec::new();
-    for msg in buf.split_inclusive(|c| *c == 60) {
-        let packet = Packet::try_from(msg)?;
-        res.push(packet)
-    }
-
-    Ok(res)
 }
