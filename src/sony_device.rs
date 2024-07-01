@@ -61,7 +61,7 @@ impl SonyDevice {
         }
     }
 
-    pub async fn run(&self, sender: tokio::sync::broadcast::Sender<Packet>) -> anyhow::Result<()> {
+    pub async fn run(&self, sender: &tokio::sync::broadcast::Sender<Packet>) -> anyhow::Result<()> {
         let mut send_buffer = [0u8; 256];
         let mut receive_buffer = [0u8; 1024];
 
