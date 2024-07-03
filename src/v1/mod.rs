@@ -1,3 +1,60 @@
+use std::backtrace::BacktraceStatus;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u8)]
+pub enum BatteryType {
+    Single = 0,
+    Dual = 1,
+    Case = 2,
+}
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum BatteryState {
+    Single {
+        level: u8,
+        is_charging: bool,
+    },
+    Dual {
+        level_left: u8,
+        is_left_charging: bool,
+        level_right: u8,
+        is_right_charging: bool,
+    },
+}
+
+impl TryFrom<&[u8]> for BatteryState {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let battery_type = BatteryType::try_from(value[0])?;
+        match battery_type {
+            BatteryType::Single | BatteryType::Case => {
+                let level = value[1];
+                let is_charging = value[2] == 1;
+                Ok(BatteryState::Single { level, is_charging })
+            }
+            BatteryType::Dual => Ok(BatteryState::Dual {
+                level_left: value[1],
+                is_left_charging: value[2] == 1,
+                level_right: value[3],
+                is_right_charging: value[4] == 1,
+            }),
+        }
+    }
+}
+
+impl TryFrom<u8> for BatteryType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Single),
+            1 => Ok(Self::Dual),
+            2 => Ok(Self::Case),
+            value => Err(anyhow::format_err!("invalid battery type : {:02x?}", value)),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Packet {
     pub seqnum: u8,
@@ -70,9 +127,9 @@ pub enum PayloadCommand1 {
     Init2Request,
     Init2Reply,
 
-    BatteryLevelRequest,
-    BatteryLevelReply,
-    BatteryLevelNotify,
+    BatteryLevelRequest(BatteryType),
+    BatteryLevelReply(BatteryState),
+    BatteryLevelNotify(BatteryState),
 
     AudioCodecRequest,
     AudioCodecReply,
@@ -151,9 +208,15 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
             0x06 => todo!("Self::Init2Request"),
             0x07 => todo!("Self::Init2Reply"),
 
-            0x10 => todo!("Self::BatteryLevelRequest"),
-            0x11 => todo!("Self::BatteryLevelReply"),
-            0x13 => todo!("Self::BatteryLevelNotify"),
+            0x10 => Ok(PayloadCommand1::BatteryLevelRequest(BatteryType::try_from(
+                value[1],
+            )?)),
+            0x11 => Ok(PayloadCommand1::BatteryLevelReply(BatteryState::try_from(
+                &value[1..],
+            )?)),
+            0x13 => Ok(PayloadCommand1::BatteryLevelNotify(BatteryState::try_from(
+                &value[1..],
+            )?)),
 
             0x18 => todo!("Self::AudioCodecRequest"),
             0x19 => todo!("Self::AudioCodecReply"),
@@ -244,9 +307,13 @@ impl<'a> Payload for PayloadCommand1 {
             Self::FwVersionReply => todo!("0x05"),
             Self::Init2Request => todo!("0x06"),
             Self::Init2Reply => todo!("0x07"),
-            Self::BatteryLevelRequest => todo!("0x10"),
-            Self::BatteryLevelReply => todo!("0x11"),
-            Self::BatteryLevelNotify => todo!("0x13"),
+            Self::BatteryLevelRequest(b) => {
+                buf[0] = 0x10;
+                buf[1] = *b as u8;
+                Ok(2)
+            }
+            Self::BatteryLevelReply(state) => todo!("0x11"),
+            Self::BatteryLevelNotify(state) => todo!("0x13"),
             Self::AudioCodecRequest => todo!("0x18"),
             Self::AudioCodecReply => todo!("0x19"),
             Self::AudioCodecNotify => todo!("0x1b"),
