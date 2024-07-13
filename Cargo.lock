@@ -684,12 +684,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sony-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tracing",
+]
+
+[[package]]
 name = "sony-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bluer",
  "futures",
+ "sony-protocol",
  "tokio",
  "tracing",
  "tracing-subscriber",

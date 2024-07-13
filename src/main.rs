@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use anyhow::Context;
 use bluer::{
     agent::Agent,
     rfcomm::{Profile, Role, Stream},
@@ -7,11 +8,12 @@ use bluer::{
 };
 use futures::StreamExt;
 use sony_device::SonyDevice;
-use tracing::{error, info, trace};
+use tokio::sync::broadcast::error::RecvError;
+use tracing::{error, info};
 
-mod device_session;
 mod sony_device;
-mod v1;
+
+use sony_protocol::v1;
 
 use v1::{AncMode, AncPayload, PacketContent, PayloadCommand1};
 
@@ -46,9 +48,11 @@ async fn main() -> anyhow::Result<()> {
             event = events.next() => {
                 if let Some(AdapterEvent::DeviceAdded(dev)) = event {
                         let device = adapter.device(dev)?;
-                        let _ = device.connect().await;
-                        let _ = device.connect_profile(&profile_uuid).await;
-                    }
+                        tokio::spawn(async move {
+                            let _ = device.connect().await;
+                            let _ = device.connect_profile(&profile_uuid).await;
+                        });
+                }
             }
 
             request = hndl.next() => {
@@ -68,14 +72,14 @@ async fn main() -> anyhow::Result<()> {
 async fn device_loop(channel: Stream) -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let device = Arc::new(SonyDevice::new(channel));
+    let device = Arc::new(SonyDevice::new());
 
     let mut receiver = {
         let device = device.clone();
-        let (sender, receiver) = tokio::sync::broadcast::channel(1);
+        let (sender, receiver) = tokio::sync::broadcast::channel(10);
 
         tokio::spawn(async move {
-            if let Err(e) = device.run(&sender).await {
+            if let Err(e) = device.run(channel, &sender).await {
                 error!("on device loop : {}", e);
             }
             drop(sender);
@@ -84,29 +88,29 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         receiver
     };
 
-    let res = device
+    device
         .send(PacketContent::Command1(PayloadCommand1::InitRequest))
         .await?;
 
-    trace!("InitRequest = {:?}", res);
+    _ = receiver.recv().await?;
 
-    let res = device
+    device
         .send(PacketContent::Command1(
             PayloadCommand1::AmbientSoundControlGet,
         ))
         .await?;
 
-    trace!("AmbientSoundControlGet = {:?}", res);
+    let anc_mode = loop {
+        let res = receiver.recv().await?;
 
-    let anc_mode = if let PacketContent::Command1(PayloadCommand1::AmbientSoundControlRet(res)) =
-        res.content
-    {
-        res
-    } else {
-        todo!()
+        if let PacketContent::Command1(PayloadCommand1::AmbientSoundControlRet(res)) = res.content {
+            break res;
+        }
     };
 
-    let res = device
+    info!("AmbientSoundControlGet = {:?}", anc_mode);
+
+    device
         .send(PacketContent::Command1(
             PayloadCommand1::AmbientSoundControlSet(AncPayload {
                 anc_mode: if anc_mode.anc_mode == AncMode::Off {
@@ -120,11 +124,44 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         ))
         .await?;
 
-    trace!("AmbientSoundControlSet = {:?}", res);
+    info!("recv : {:?}", receiver.recv().await.context("failed")?);
 
-    while let Ok(event) = receiver.recv().await {
-        info!("new event : {:?}", event);
+    device
+        .send(PacketContent::Command1(
+            PayloadCommand1::BatteryLevelRequest(v1::BatteryType::Single),
+        ))
+        .await?;
+
+    info!("recv : {:?}", receiver.recv().await.context("failed")?);
+
+    device
+        .send(PacketContent::Command1(
+            PayloadCommand1::BatteryLevelRequest(v1::BatteryType::Dual),
+        ))
+        .await?;
+
+    info!("recv : {:?}", receiver.recv().await.context("failed2")?);
+
+    device
+        .send(PacketContent::Command1(
+            PayloadCommand1::BatteryLevelRequest(v1::BatteryType::Case),
+        ))
+        .await?;
+
+    info!("recv : {:?}", receiver.recv().await.context("failed3")?);
+
+    loop {
+        match receiver.recv().await {
+            Ok(ev) => {
+                info!("new event : {:?}", ev)
+            }
+            Err(RecvError::Closed) => {
+                break;
+            }
+            Err(e) => {
+                error!("{}", e);
+            }
+        }
     }
-
     Ok(())
 }

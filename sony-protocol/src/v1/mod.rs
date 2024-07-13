@@ -1,5 +1,3 @@
-use std::backtrace::BacktraceStatus;
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum BatteryType {
