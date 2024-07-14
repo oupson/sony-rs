@@ -334,8 +334,8 @@ impl<'a> Payload for PayloadCommand1 {
                 buf[1] = *b as u8;
                 Ok(2)
             }
-            Self::BatteryLevelReply(state) => Err(crate::Error::NotImplemented("0x11")),
-            Self::BatteryLevelNotify(state) => Err(crate::Error::NotImplemented("0x13")),
+            Self::BatteryLevelReply(_state) => Err(crate::Error::NotImplemented("0x11")),
+            Self::BatteryLevelNotify(_state) => Err(crate::Error::NotImplemented("0x13")),
             Self::AudioCodecRequest => Err(crate::Error::NotImplemented("0x18")),
             Self::AudioCodecReply => Err(crate::Error::NotImplemented("0x19")),
             Self::AudioCodecNotify => Err(crate::Error::NotImplemented("0x1b")),
