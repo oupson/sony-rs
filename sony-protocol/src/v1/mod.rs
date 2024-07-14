@@ -1,3 +1,5 @@
+use std::array::TryFromSliceError;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum BatteryType {
@@ -402,7 +404,7 @@ impl<'a> Payload for PayloadCommand1 {
 }
 
 impl<'a> TryFrom<&'a [u8]> for Packet {
-    type Error = crate::Error;
+    type Error = crate::TryFromPacketError;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         // TODO HEADER / END / CHECKSUM
@@ -411,19 +413,29 @@ impl<'a> TryFrom<&'a [u8]> for Packet {
         let seqnum = value[2];
 
         let content = match value[1] {
-            0x1 => PacketContent::Ack,
+            0x1 => Ok(PacketContent::Ack),
             0x0c => {
-                let packet_size = u32::from_be_bytes(value[3..][0..4].try_into()?); // TODO
+                let packet_size = u32::from_be_bytes(
+                    value[3..][0..4]
+                        .try_into()
+                        .map_err(|e: TryFromSliceError| Into::<crate::Error>::into(e))?,
+                ); // TODO
 
                 let payload_raw = &value[7..7 + packet_size as usize];
 
-                let payload = PayloadCommand1::try_from(payload_raw)?;
+                let payload = PayloadCommand1::try_from(payload_raw);
 
-                PacketContent::Command1(payload)
+                match payload {
+                    Ok(p) => Ok(PacketContent::Command1(p)),
+                    Err(crate::Error::NotImplemented(what)) => {
+                        Err(crate::TryFromPacketError::NotImplemented { seqnum, what })
+                    }
+                    Err(e) => Err(e.into()),
+                }
             }
-            0x0e => PacketContent::Command2,
+            0x0e => Ok(PacketContent::Command2),
             _ => todo!(),
-        };
+        }?;
 
         Ok(Packet { seqnum, content })
     }

@@ -3,13 +3,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tracing::trace;
+use tracing::{trace, warn};
 use v1::{Packet, PacketContent};
 
 mod error;
 pub mod v1;
 
-pub use error::{Error, Result};
+pub use error::{Error, Result, TryFromPacketError};
 
 #[derive(Debug)]
 pub enum State<'a> {
@@ -82,27 +82,38 @@ impl Device {
                     .unwrap()
                 + 1;
 
-            let packet = v1::Packet::try_from(&self.read_buf[start..pos])?;
-
             self.reading = if pos == end { None } else { Some((pos, end)) };
+            let packet = v1::Packet::try_from(&self.read_buf[start..pos]);
+
+            match packet {
+                Ok(packet) => {
+                    if !packet.is_ack() {
+                        let seqnum = packet.seqnum();
+
+                        self.pending_packet = Some(packet);
+
+                        let size = self.encode_packet(PacketContent::Ack, Some(seqnum))?;
+
+                        Ok(State::SendPacket(&self.write_buf[size]))
+                    } else {
+                        if self.sending.is_some() {
+                            self.seqnum = packet.seqnum();
+                            self.sending = None;
+                        }
+
+                        Ok(State::ReceivedPacket(packet))
+                    }
+                }
+                Err(TryFromPacketError::NotImplemented { seqnum, what }) => {
+                    warn!("not implemented : {}", what);
+                    let size = self.encode_packet(PacketContent::Ack, Some(seqnum))?;
+
+                    Ok(State::SendPacket(&self.write_buf[size]))
+                }
+                Err(TryFromPacketError::ProtocolError(e)) => Err(e),
+            }
 
             // TODO IGNORE SEQNUM ALREADY
-            if !packet.is_ack() {
-                let seqnum = packet.seqnum();
-
-                self.pending_packet = Some(packet);
-
-                let size = self.encode_packet(PacketContent::Ack, Some(seqnum))?;
-
-                Ok(State::SendPacket(&self.write_buf[size]))
-            } else {
-                if self.sending.is_some() {
-                    self.seqnum = packet.seqnum();
-                    self.sending = None;
-                }
-
-                Ok(State::ReceivedPacket(packet))
-            }
         } else if let Some((r, i, d)) = self.sending.take() {
             if let Some(i) = i {
                 if i.elapsed() > RETRY_DURATION {

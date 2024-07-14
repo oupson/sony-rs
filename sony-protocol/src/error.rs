@@ -1,6 +1,17 @@
 use std::{array::TryFromSliceError, fmt::Display};
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum TryFromPacketError {
+    ProtocolError(Error),
+    NotImplemented { seqnum: u8, what: &'static str },
+}
 
-#[derive(Debug)]
+impl From<Error> for TryFromPacketError {
+    fn from(value: Error) -> Self {
+        Self::ProtocolError(value)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Error {
     UnknownPacket(&'static str),
     PacketPending,
@@ -32,5 +43,11 @@ impl From<TryFromSliceError> for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<&Error> for Error {
+    fn from(value: &Error) -> Self {
+        value.clone()
+    }
+}
 
 pub type Result<T> = std::result::Result<T, Error>;
