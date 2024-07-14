@@ -141,7 +141,7 @@ impl Device {
     }
 
     pub fn send_packet(&mut self, content: PacketContent) -> anyhow::Result<()> {
-        trace!("sending");
+        trace!("send_packet : {:?}", content);
         if self.sending.is_some() {
             return Err(anyhow::format_err!("already awaiting response"));
         } else {

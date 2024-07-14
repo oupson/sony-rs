@@ -72,27 +72,19 @@ async fn main() -> anyhow::Result<()> {
 async fn device_loop(channel: Stream) -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let device = Arc::new(SonyDevice::new());
+    let (mut device, run_loop) = SonyDevice::new(channel);
 
-    let mut receiver = {
-        let device = device.clone();
-        let (sender, receiver) = tokio::sync::broadcast::channel(10);
-
-        tokio::spawn(async move {
-            if let Err(e) = device.run(channel, &sender).await {
-                error!("on device loop : {}", e);
-            }
-            drop(sender);
-        });
-
-        receiver
-    };
+    tokio::spawn(async move {
+        if let Err(e) = run_loop.await {
+            error!("on device loop : {}", e);
+        }
+    });
 
     device
         .send(PacketContent::Command1(PayloadCommand1::InitRequest))
         .await?;
 
-    _ = receiver.recv().await?;
+    _ = device.packets_receiver.recv().await?;
 
     device
         .send(PacketContent::Command1(
@@ -101,7 +93,7 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         .await?;
 
     let anc_mode = loop {
-        let res = receiver.recv().await?;
+        let res = device.packets_receiver.recv().await?;
 
         if let PacketContent::Command1(PayloadCommand1::AmbientSoundControlRet(res)) = res.content {
             break res;
@@ -124,7 +116,10 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         ))
         .await?;
 
-    info!("recv : {:?}", receiver.recv().await.context("failed")?);
+    info!(
+        "recv : {:?}",
+        device.packets_receiver.recv().await.context("failed")?
+    );
 
     device
         .send(PacketContent::Command1(
@@ -132,7 +127,10 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         ))
         .await?;
 
-    info!("recv : {:?}", receiver.recv().await.context("failed")?);
+    info!(
+        "recv : {:?}",
+        device.packets_receiver.recv().await.context("failed")?
+    );
 
     device
         .send(PacketContent::Command1(
@@ -140,7 +138,10 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         ))
         .await?;
 
-    info!("recv : {:?}", receiver.recv().await.context("failed2")?);
+    info!(
+        "recv : {:?}",
+        device.packets_receiver.recv().await.context("failed2")?
+    );
 
     device
         .send(PacketContent::Command1(
@@ -148,10 +149,13 @@ async fn device_loop(channel: Stream) -> anyhow::Result<()> {
         ))
         .await?;
 
-    info!("recv : {:?}", receiver.recv().await.context("failed3")?);
+    info!(
+        "recv : {:?}",
+        device.packets_receiver.recv().await.context("failed3")?
+    );
 
     loop {
-        match receiver.recv().await {
+        match device.packets_receiver.recv().await {
             Ok(ev) => {
                 info!("new event : {:?}", ev)
             }
