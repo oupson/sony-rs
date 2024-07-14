@@ -1,14 +1,8 @@
 use std::{array::TryFromSliceError, fmt::Display};
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum TryFromPacketError {
-    ProtocolError(Error),
-    NotImplemented { seqnum: u8, what: &'static str },
-}
-
-impl From<Error> for TryFromPacketError {
-    fn from(value: Error) -> Self {
-        Self::ProtocolError(value)
-    }
+pub struct TryFromPacketError {
+    pub seqnum: u8,
+    pub error: Error,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

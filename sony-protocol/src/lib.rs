@@ -104,13 +104,13 @@ impl Device {
                         Ok(State::ReceivedPacket(packet))
                     }
                 }
-                Err(TryFromPacketError::NotImplemented { seqnum, what }) => {
-                    warn!("not implemented : {}", what);
-                    let size = self.encode_packet(PacketContent::Ack, Some(seqnum))?;
+
+                Err(e) => {
+                    warn!("error while parsing packet : {}", e.error);
+                    let size = self.encode_packet(PacketContent::Ack, Some(e.seqnum))?;
 
                     Ok(State::SendPacket(&self.write_buf[size]))
                 }
-                Err(TryFromPacketError::ProtocolError(e)) => Err(e),
             }
 
             // TODO IGNORE SEQNUM ALREADY

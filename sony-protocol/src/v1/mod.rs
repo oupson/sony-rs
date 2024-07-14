@@ -418,7 +418,8 @@ impl<'a> TryFrom<&'a [u8]> for Packet {
                 let packet_size = u32::from_be_bytes(
                     value[3..][0..4]
                         .try_into()
-                        .map_err(|e: TryFromSliceError| Into::<crate::Error>::into(e))?,
+                        .map_err(|e: TryFromSliceError| Into::<crate::Error>::into(e))
+                        .map_err(|error| crate::TryFromPacketError { seqnum, error })?,
                 ); // TODO
 
                 let payload_raw = &value[7..7 + packet_size as usize];
@@ -427,10 +428,7 @@ impl<'a> TryFrom<&'a [u8]> for Packet {
 
                 match payload {
                     Ok(p) => Ok(PacketContent::Command1(p)),
-                    Err(crate::Error::NotImplemented(what)) => {
-                        Err(crate::TryFromPacketError::NotImplemented { seqnum, what })
-                    }
-                    Err(e) => Err(e.into()),
+                    Err(error) => Err(crate::TryFromPacketError { seqnum, error }),
                 }
             }
             0x0e => Ok(PacketContent::Command2),
