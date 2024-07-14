@@ -6,7 +6,10 @@ use std::{
 use tracing::trace;
 use v1::{Packet, PacketContent};
 
+mod error;
 pub mod v1;
+
+pub use error::{Error, Result};
 
 #[derive(Debug)]
 pub enum State<'a> {
@@ -46,7 +49,7 @@ impl Default for Device {
 const RETRY_DURATION: Duration = Duration::from_secs(1);
 
 impl Device {
-    pub fn received_packet(&mut self, content: &[u8]) -> anyhow::Result<usize> {
+    pub fn received_packet(&mut self, content: &[u8]) -> Result<usize> {
         trace!("received {:02x?}", content);
         let (start, mut index) = self.reading.unwrap_or((0, 0));
 
@@ -68,7 +71,7 @@ impl Device {
         return Ok(content_index);
     }
 
-    pub fn poll<'a>(&'a mut self) -> anyhow::Result<State<'a>> {
+    pub fn poll<'a>(&'a mut self) -> Result<State<'a>> {
         if let Some(packet) = self.pending_packet.take() {
             Ok(State::ReceivedPacket(packet))
         } else if let Some((start, end)) = self.reading {
@@ -122,10 +125,10 @@ impl Device {
         &mut self,
         command: PacketContent,
         seqnum: Option<u8>,
-    ) -> anyhow::Result<Range<usize>> {
+    ) -> Result<Range<usize>> {
         let seqnum = if command != PacketContent::Ack {
             if self.sending.is_some() {
-                return Err(anyhow::format_err!("already awaiting response"));
+                return Err(Error::PacketPending);
             }
 
             seqnum.unwrap_or(self.seqnum)
@@ -140,10 +143,10 @@ impl Device {
         return Ok(start..start + packet.write_into(&mut self.write_buf[start..])?);
     }
 
-    pub fn send_packet(&mut self, content: PacketContent) -> anyhow::Result<()> {
+    pub fn send_packet(&mut self, content: PacketContent) -> Result<()> {
         trace!("send_packet : {:?}", content);
         if self.sending.is_some() {
-            return Err(anyhow::format_err!("already awaiting response"));
+            return Err(Error::PacketPending);
         } else {
             let seq = self.encode_packet(content, None)?;
             self.sending = Some((seq, None, RETRY_DURATION));

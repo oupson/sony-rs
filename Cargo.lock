@@ -687,7 +687,6 @@ dependencies = [
 name = "sony-protocol"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "tracing",
 ]
 

@@ -20,7 +20,7 @@ pub enum BatteryState {
 }
 
 impl TryFrom<&[u8]> for BatteryState {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let battery_type = BatteryType::try_from(value[0])?;
@@ -41,14 +41,17 @@ impl TryFrom<&[u8]> for BatteryState {
 }
 
 impl TryFrom<u8> for BatteryType {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Single),
             1 => Ok(Self::Dual),
             2 => Ok(Self::Case),
-            value => Err(anyhow::format_err!("invalid battery type : {:02x?}", value)),
+            value => Err(crate::Error::InvalidValueForEnum {
+                what: "battery type",
+                value,
+            }),
         }
     }
 }
@@ -75,7 +78,7 @@ impl Packet {
         self.seqnum
     }
 
-    pub fn write_into(self, buf: &mut [u8]) -> anyhow::Result<usize> {
+    pub fn write_into(self, buf: &mut [u8]) -> crate::Result<usize> {
         buf[0] = 0x3e;
         buf[1] = match self.content {
             PacketContent::Ack => 0x01,
@@ -104,7 +107,7 @@ impl Packet {
         PacketContent::Ack == self.content
     }
 
-    fn write_payload(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_payload(&self, buf: &mut [u8]) -> crate::Result<u32> {
         match &self.content {
             PacketContent::Ack => Ok(0),
             PacketContent::Command1(p) => p.write_into(buf),
@@ -190,7 +193,7 @@ pub enum PayloadCommand1 {
 }
 
 impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         match value[0] {
@@ -200,11 +203,11 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
                 Ok(Self::InitReply([value[1], value[2], value[3]]))
             }
 
-            0x04 => todo!("Self::FwVersionRequest"),
-            0x05 => todo!("Self::FwVersionReply"),
+            0x04 => Err(crate::Error::NotImplemented("Self::FwVersionRequest")),
+            0x05 => Err(crate::Error::NotImplemented("Self::FwVersionReply")),
 
-            0x06 => todo!("Self::Init2Request"),
-            0x07 => todo!("Self::Init2Reply"),
+            0x06 => Err(crate::Error::NotImplemented("Self::Init2Request")),
+            0x07 => Err(crate::Error::NotImplemented("Self::Init2Reply")),
 
             0x10 => Ok(PayloadCommand1::BatteryLevelRequest(BatteryType::try_from(
                 value[1],
@@ -216,21 +219,23 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
                 &value[1..],
             )?)),
 
-            0x18 => todo!("Self::AudioCodecRequest"),
-            0x19 => todo!("Self::AudioCodecReply"),
-            0x1b => todo!("Self::AudioCodecNotify"),
+            0x18 => Err(crate::Error::NotImplemented("Self::AudioCodecRequest")),
+            0x19 => Err(crate::Error::NotImplemented("Self::AudioCodecReply")),
+            0x1b => Err(crate::Error::NotImplemented("Self::AudioCodecNotify")),
 
-            0x22 => todo!("Self::PowerOff"),
+            0x22 => Err(crate::Error::NotImplemented("Self::PowerOff")),
 
-            0x46 => todo!("Self::SoundPositionOrModeGet"),
-            0x47 => todo!("Self::SoundPositionOrModeRet"),
-            0x48 => todo!("Self::SoundPositionOrModeSet"),
-            0x49 => todo!("Self::SoundPositionOrModeNotify"),
+            0x46 => Err(crate::Error::NotImplemented("Self::SoundPositionOrModeGet")),
+            0x47 => Err(crate::Error::NotImplemented("Self::SoundPositionOrModeRet")),
+            0x48 => Err(crate::Error::NotImplemented("Self::SoundPositionOrModeSet")),
+            0x49 => Err(crate::Error::NotImplemented(
+                "Self::SoundPositionOrModeNotify",
+            )),
 
-            0x56 => todo!("Self::EqualizerGet"),
-            0x57 => todo!("Self::EqualizerRet"),
-            0x58 => todo!("Self::EqualizerSet"),
-            0x59 => todo!("Self::EqualizerNotify"),
+            0x56 => Err(crate::Error::NotImplemented("Self::EqualizerGet")),
+            0x57 => Err(crate::Error::NotImplemented("Self::EqualizerRet")),
+            0x58 => Err(crate::Error::NotImplemented("Self::EqualizerSet")),
+            0x59 => Err(crate::Error::NotImplemented("Self::EqualizerNotify")),
 
             0x66 => Ok(Self::AmbientSoundControlGet),
             0x67 => Ok(Self::AmbientSoundControlRet(AncPayload::try_from(
@@ -243,53 +248,70 @@ impl<'a> TryFrom<&'a [u8]> for PayloadCommand1 {
                 &value[1..],
             )?)),
 
-            0xa6 => todo!("Self::VolumeGet"),
-            0xa7 => todo!("Self::VolumeRet"),
-            0xa8 => todo!("Self::VolumeSet"),
-            0xa9 => todo!("Self::VolumeNotify"),
+            0xa6 => Err(crate::Error::NotImplemented("Self::VolumeGet")),
+            0xa7 => Err(crate::Error::NotImplemented("Self::VolumeRet")),
+            0xa8 => Err(crate::Error::NotImplemented("Self::VolumeSet")),
+            0xa9 => Err(crate::Error::NotImplemented("Self::VolumeNotify")),
 
-            0x84 => todo!("Self::NoiseCancellingOptimizerStart"),
-            0x85 => todo!("Self::NoiseCancellingOptimizerStatus"),
-
-            0x86 => todo!("Self::NoiseCancellingOptimizerStateGet"),
-            0x87 => todo!("Self::NoiseCancellingOptimizerStateRet"),
-            0x89 => todo!("Self::NoiseCancellingOptimizerStateNotify"),
-
-            0xd6 => todo!("Self::TouchSensorGet"),
-            0xd7 => todo!("Self::TouchSensorRet"),
-            0xd8 => todo!("Self::TouchSensorSet"),
-            0xd9 => todo!("Self::TouchSensorNotify"),
-
-            0xe6 => todo!("Self::AudioUpsamplingGet"),
-            0xe7 => todo!("Self::AudioUpsamplingRet"),
-            0xe8 => todo!("Self::AudioUpsamplingSet"),
-            0xe9 => todo!("Self::AudioUpsamplingNotify"),
-
-            0xf6 => todo!("Self::AutomaticPowerOffButtonModeGet"),
-            0xf7 => todo!("Self::AutomaticPowerOffButtonModeRet"),
-            0xf8 => todo!("Self::AutomaticPowerOffButtonModeSet"),
-            0xf9 => todo!("Self::AutomaticPowerOffButtonModeNotify"),
-
-            0xfa => todo!("Self::SpeakToChatConfigGet"),
-            0xfb => todo!("Self::SpeakToChatConfigRet"),
-            0xfc => todo!("Self::SpeakToChatConfigSet"),
-            0xfd => todo!("Self::SpeakToChatConfigNotify"),
-
-            0xc4 => todo!("Self::JsonGet"),
-            0xc9 => todo!("Self::JsonRet"),
-
-            0x90 => todo!("Self::SomethingGet"),
-            0x91 => todo!("Self::SomethingRet"),
-            v => Err(anyhow::format_err!(
-                "unknown payload for command1 : {:02x?}",
-                v
+            0x84 => Err(crate::Error::NotImplemented(
+                "Self::NoiseCancellingOptimizerStart",
             )),
+            0x85 => Err(crate::Error::NotImplemented(
+                "Self::NoiseCancellingOptimizerStatus",
+            )),
+
+            0x86 => Err(crate::Error::NotImplemented(
+                "Self::NoiseCancellingOptimizerStateGet",
+            )),
+            0x87 => Err(crate::Error::NotImplemented(
+                "Self::NoiseCancellingOptimizerStateRet",
+            )),
+            0x89 => Err(crate::Error::NotImplemented(
+                "Self::NoiseCancellingOptimizerStateNotify",
+            )),
+
+            0xd6 => Err(crate::Error::NotImplemented("Self::TouchSensorGet")),
+            0xd7 => Err(crate::Error::NotImplemented("Self::TouchSensorRet")),
+            0xd8 => Err(crate::Error::NotImplemented("Self::TouchSensorSet")),
+            0xd9 => Err(crate::Error::NotImplemented("Self::TouchSensorNotify")),
+
+            0xe6 => Err(crate::Error::NotImplemented("Self::AudioUpsamplingGet")),
+            0xe7 => Err(crate::Error::NotImplemented("Self::AudioUpsamplingRet")),
+            0xe8 => Err(crate::Error::NotImplemented("Self::AudioUpsamplingSet")),
+            0xe9 => Err(crate::Error::NotImplemented("Self::AudioUpsamplingNotify")),
+
+            0xf6 => Err(crate::Error::NotImplemented(
+                "Self::AutomaticPowerOffButtonModeGet",
+            )),
+            0xf7 => Err(crate::Error::NotImplemented(
+                "Self::AutomaticPowerOffButtonModeRet",
+            )),
+            0xf8 => Err(crate::Error::NotImplemented(
+                "Self::AutomaticPowerOffButtonModeSset",
+            )),
+            0xf9 => Err(crate::Error::NotImplemented(
+                "Self::AutomaticPowerOffButtonModeNotify",
+            )),
+
+            0xfa => Err(crate::Error::NotImplemented("Self::SpeakToChatConfigGet")),
+            0xfb => Err(crate::Error::NotImplemented("Self::SpeakToChatConfigRet")),
+            0xfc => Err(crate::Error::NotImplemented("Self::SpeakToChatConfigSet")),
+            0xfd => Err(crate::Error::NotImplemented(
+                "Self::SpeakToChatConfigNotify",
+            )),
+
+            0xc4 => Err(crate::Error::NotImplemented("Self::JsonGet")),
+            0xc9 => Err(crate::Error::NotImplemented("Self::JsonRet")),
+
+            0x90 => Err(crate::Error::NotImplemented("Self::SomethingGet")),
+            0x91 => Err(crate::Error::NotImplemented("Self::SomethingRet")),
+            v => Err(crate::Error::UnknownPayloadType(v)),
         }
     }
 }
 
 impl<'a> Payload for PayloadCommand1 {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_into(&self, buf: &mut [u8]) -> crate::Result<u32> {
         match self {
             Self::InitRequest => {
                 buf[0] = 0x00;
@@ -301,29 +323,29 @@ impl<'a> Payload for PayloadCommand1 {
                 buf[1..4].copy_from_slice(b);
                 Ok(4)
             }
-            Self::FwVersionRequest => todo!("0x04"),
-            Self::FwVersionReply => todo!("0x05"),
-            Self::Init2Request => todo!("0x06"),
-            Self::Init2Reply => todo!("0x07"),
+            Self::FwVersionRequest => Err(crate::Error::NotImplemented("0x04")),
+            Self::FwVersionReply => Err(crate::Error::NotImplemented("0x05")),
+            Self::Init2Request => Err(crate::Error::NotImplemented("0x06")),
+            Self::Init2Reply => Err(crate::Error::NotImplemented("0x07")),
             Self::BatteryLevelRequest(b) => {
                 buf[0] = 0x10;
                 buf[1] = *b as u8;
                 Ok(2)
             }
-            Self::BatteryLevelReply(state) => todo!("0x11"),
-            Self::BatteryLevelNotify(state) => todo!("0x13"),
-            Self::AudioCodecRequest => todo!("0x18"),
-            Self::AudioCodecReply => todo!("0x19"),
-            Self::AudioCodecNotify => todo!("0x1b"),
-            Self::PowerOff => todo!("0x22"),
-            Self::SoundPositionOrModeGet => todo!("0x46"),
-            Self::SoundPositionOrModeRet => todo!("0x47"),
-            Self::SoundPositionOrModeSet => todo!("0x48"),
-            Self::SoundPositionOrModeNotify => todo!("0x49"),
-            Self::EqualizerGet => todo!("0x56"),
-            Self::EqualizerRet => todo!("0x57"),
-            Self::EqualizerSet => todo!("0x58"),
-            Self::EqualizerNotify => todo!("0x59"),
+            Self::BatteryLevelReply(state) => Err(crate::Error::NotImplemented("0x11")),
+            Self::BatteryLevelNotify(state) => Err(crate::Error::NotImplemented("0x13")),
+            Self::AudioCodecRequest => Err(crate::Error::NotImplemented("0x18")),
+            Self::AudioCodecReply => Err(crate::Error::NotImplemented("0x19")),
+            Self::AudioCodecNotify => Err(crate::Error::NotImplemented("0x1b")),
+            Self::PowerOff => Err(crate::Error::NotImplemented("0x22")),
+            Self::SoundPositionOrModeGet => Err(crate::Error::NotImplemented("0x46")),
+            Self::SoundPositionOrModeRet => Err(crate::Error::NotImplemented("0x47")),
+            Self::SoundPositionOrModeSet => Err(crate::Error::NotImplemented("0x48")),
+            Self::SoundPositionOrModeNotify => Err(crate::Error::NotImplemented("0x49")),
+            Self::EqualizerGet => Err(crate::Error::NotImplemented("0x56")),
+            Self::EqualizerRet => Err(crate::Error::NotImplemented("0x57")),
+            Self::EqualizerSet => Err(crate::Error::NotImplemented("0x58")),
+            Self::EqualizerNotify => Err(crate::Error::NotImplemented("0x59")),
 
             Self::AmbientSoundControlGet => {
                 buf[0] = 0x66;
@@ -346,41 +368,41 @@ impl<'a> Payload for PayloadCommand1 {
                 let len = v.write_into(&mut buf[1..])?;
                 Ok((len + 1) as u32)
             }
-            Self::VolumeGet => todo!("0xa6"),
-            Self::VolumeRet => todo!("0xa7"),
-            Self::VolumeSet => todo!("0xa8"),
-            Self::VolumeNotify => todo!("0xa9"),
-            Self::NoiseCancellingOptimizerStart => todo!("0x84"),
-            Self::NoiseCancellingOptimizerStatus => todo!("0x85"),
-            Self::NoiseCancellingOptimizerStateGet => todo!("0x86"),
-            Self::NoiseCancellingOptimizerStateRet => todo!("0x87"),
-            Self::NoiseCancellingOptimizerStateNotify => todo!("0x89"),
-            Self::TouchSensorGet => todo!("0xd6"),
-            Self::TouchSensorRet => todo!("0xd7"),
-            Self::TouchSensorSet => todo!("0xd8"),
-            Self::TouchSensorNotify => todo!("0xd9"),
-            Self::AudioUpsamplingGet => todo!("0xe6"),
-            Self::AudioUpsamplingRet => todo!("0xe7"),
-            Self::AudioUpsamplingSet => todo!("0xe8"),
-            Self::AudioUpsamplingNotify => todo!("0xe9"),
-            Self::AutomaticPowerOffButtonModeGet => todo!("0xf6"),
-            Self::AutomaticPowerOffButtonModeRet => todo!("0xf7"),
-            Self::AutomaticPowerOffButtonModeSet => todo!("0xf8"),
-            Self::AutomaticPowerOffButtonModeNotify => todo!("0xf9"),
-            Self::SpeakToChatConfigGet => todo!("0xfa"),
-            Self::SpeakToChatConfigRet => todo!("0xfb"),
-            Self::SpeakToChatConfigSet => todo!("0xfc"),
-            Self::SpeakToChatConfigNotify => todo!("0xfd"),
-            Self::JsonGet => todo!("0xc4"),
-            Self::JsonRet => todo!("0xc9"),
-            Self::SomethingGet => todo!("0x90"),
-            Self::SomethingRet => todo!("0x91"),
+            Self::VolumeGet => Err(crate::Error::NotImplemented("0xa6")),
+            Self::VolumeRet => Err(crate::Error::NotImplemented("0xa7")),
+            Self::VolumeSet => Err(crate::Error::NotImplemented("0xa8")),
+            Self::VolumeNotify => Err(crate::Error::NotImplemented("0xa9")),
+            Self::NoiseCancellingOptimizerStart => Err(crate::Error::NotImplemented("0x84")),
+            Self::NoiseCancellingOptimizerStatus => Err(crate::Error::NotImplemented("0x85")),
+            Self::NoiseCancellingOptimizerStateGet => Err(crate::Error::NotImplemented("0x86")),
+            Self::NoiseCancellingOptimizerStateRet => Err(crate::Error::NotImplemented("0x87")),
+            Self::NoiseCancellingOptimizerStateNotify => Err(crate::Error::NotImplemented("0x89")),
+            Self::TouchSensorGet => Err(crate::Error::NotImplemented("0xd6")),
+            Self::TouchSensorRet => Err(crate::Error::NotImplemented("0xd7")),
+            Self::TouchSensorSet => Err(crate::Error::NotImplemented("0xd8")),
+            Self::TouchSensorNotify => Err(crate::Error::NotImplemented("0xd9")),
+            Self::AudioUpsamplingGet => Err(crate::Error::NotImplemented("0xe6")),
+            Self::AudioUpsamplingRet => Err(crate::Error::NotImplemented("0xe7")),
+            Self::AudioUpsamplingSet => Err(crate::Error::NotImplemented("0xe8")),
+            Self::AudioUpsamplingNotify => Err(crate::Error::NotImplemented("0xe9")),
+            Self::AutomaticPowerOffButtonModeGet => Err(crate::Error::NotImplemented("0xf6")),
+            Self::AutomaticPowerOffButtonModeRet => Err(crate::Error::NotImplemented("0xf7")),
+            Self::AutomaticPowerOffButtonModeSet => Err(crate::Error::NotImplemented("0xf8")),
+            Self::AutomaticPowerOffButtonModeNotify => Err(crate::Error::NotImplemented("0xf9")),
+            Self::SpeakToChatConfigGet => Err(crate::Error::NotImplemented("0xfa")),
+            Self::SpeakToChatConfigRet => Err(crate::Error::NotImplemented("0xfb")),
+            Self::SpeakToChatConfigSet => Err(crate::Error::NotImplemented("0xfc")),
+            Self::SpeakToChatConfigNotify => Err(crate::Error::NotImplemented("0xfd")),
+            Self::JsonGet => Err(crate::Error::NotImplemented("0xc4")),
+            Self::JsonRet => Err(crate::Error::NotImplemented("0xc9")),
+            Self::SomethingGet => Err(crate::Error::NotImplemented("0x90")),
+            Self::SomethingRet => Err(crate::Error::NotImplemented("0x91")),
         }
     }
 }
 
 impl<'a> TryFrom<&'a [u8]> for Packet {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         // TODO HEADER / END / CHECKSUM
@@ -423,11 +445,11 @@ pub enum AncMode {
 }
 
 pub trait Payload {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32>;
+    fn write_into(&self, buf: &mut [u8]) -> crate::Result<u32>;
 }
 
 impl Payload for AncPayload {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_into(&self, buf: &mut [u8]) -> crate::Result<u32> {
         // TODO invalid buffer size
         buf[0] = 0x02;
         buf[1] = if self.anc_mode == AncMode::Off {
@@ -452,14 +474,14 @@ impl Payload for AncPayload {
 }
 
 impl Payload for &[u8] {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_into(&self, buf: &mut [u8]) -> crate::Result<u32> {
         buf[0..self.len()].copy_from_slice(self);
         Ok(self.len() as u32)
     }
 }
 
 impl Payload for () {
-    fn write_into(&self, _: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_into(&self, _: &mut [u8]) -> crate::Result<u32> {
         Ok(0)
     }
 }
@@ -468,7 +490,7 @@ impl Payload for () {
 pub struct GetAnc;
 
 impl Payload for GetAnc {
-    fn write_into(&self, buf: &mut [u8]) -> anyhow::Result<u32> {
+    fn write_into(&self, buf: &mut [u8]) -> crate::Result<u32> {
         buf[0] = 0x02;
 
         Ok(1)
@@ -476,7 +498,7 @@ impl Payload for GetAnc {
 }
 
 impl TryFrom<&[u8]> for AncPayload {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         assert_eq!(7, value.len());
