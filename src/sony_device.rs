@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::Context;
 use bluer::rfcomm::Stream;
 use futures::Future;
+use sony_protocol::v1::{Packet, PacketContent};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{
@@ -13,8 +14,6 @@ use tokio::{
     time::{self, Instant},
 };
 use tracing::trace;
-
-use crate::v1::{Packet, PacketContent};
 
 pub struct SonyDevice {
     pub packets_queries: MspcSender<(PacketContent, OneshotSender<()>)>,

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tokio-stream = { version = "0.1.15", features = ["sync"] }
 anyhow = "1.0.86"
 bluer = { version = "0.17.1", features = ["bluetoothd", "rfcomm"] }
 tokio = { version = "1.38.0", features = ["full"] }
