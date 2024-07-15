@@ -269,7 +269,7 @@ impl App {
 
             let title_block = Block::default()
                 .borders(Borders::ALL)
-                .title(device.address.to_string())
+                .title(device.device.name())
                 .style(Style::default());
 
             let chunks = Layout::default()
@@ -353,6 +353,8 @@ impl App {
 
             frame.render_widget(title, chunks[0]);
             frame.render_widget(title_block, area);
+        } else {
+            frame.render_widget(Text::raw("No device"), area)
         }
     }
 }

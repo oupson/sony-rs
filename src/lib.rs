@@ -17,6 +17,7 @@ mod sony_device;
 #[derive(Clone)]
 pub struct Device {
     address: Address,
+    name: String,
     sony_device: SonyDevice,
 }
 
@@ -31,6 +32,10 @@ impl std::fmt::Debug for Device {
 impl Device {
     pub fn address(&self) -> Address {
         self.address
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -116,12 +121,13 @@ async fn run_loop(sender: Sender<DeviceEvent>) -> anyhow::Result<()> {
             request = hndl.next() => {
                 if let Some(r) = request {
                     let addr = r.device();
+                    let name = adapter.device(addr)?.alias().await?;
                     let channel = r.accept().unwrap();
                     let sender = sender.clone();
                     tokio::spawn(async move {
                         match start_communication(channel).await {
                             Ok(device) => {
-                                 _ = sender.send(DeviceEvent::DeviceAdded(Device { address: addr, sony_device: device })).await;
+                                 _ = sender.send(DeviceEvent::DeviceAdded(Device { address: addr, name: name, sony_device: device })).await;
                             }
                             Err(e) => error!("failed to connect to device : {}", e),
                         }
