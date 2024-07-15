@@ -13,6 +13,10 @@ pub enum BatteryState {
         level: u8,
         is_charging: bool,
     },
+    Case {
+        level: u8,
+        is_charging: bool,
+    },
     Dual {
         level_left: u8,
         is_left_charging: bool,
@@ -27,17 +31,36 @@ impl TryFrom<&[u8]> for BatteryState {
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let battery_type = BatteryType::try_from(value[0])?;
         match battery_type {
-            BatteryType::Single | BatteryType::Case => {
+            BatteryType::Single => {
                 let level = value[1];
                 let is_charging = value[2] == 1;
                 Ok(BatteryState::Single { level, is_charging })
             }
-            BatteryType::Dual => Ok(BatteryState::Dual {
-                level_left: value[1],
-                is_left_charging: value[2] == 1,
-                level_right: value[3],
-                is_right_charging: value[4] == 1,
-            }),
+            BatteryType::Case => {
+                let level = value[1];
+                let is_charging = value[2] == 1;
+                Ok(BatteryState::Case { level, is_charging })
+            }
+            BatteryType::Dual => {
+                if value[1] == 0 {
+                    Ok(BatteryState::Single {
+                        level: value[3],
+                        is_charging: value[4] == 1,
+                    })
+                } else if value[3] == 0 {
+                    Ok(BatteryState::Single {
+                        level: value[1],
+                        is_charging: value[2] == 1,
+                    })
+                } else {
+                    Ok(BatteryState::Dual {
+                        level_left: value[1],
+                        is_left_charging: value[2] == 1,
+                        level_right: value[3],
+                        is_right_charging: value[4] == 1,
+                    })
+                }
+            }
         }
     }
 }

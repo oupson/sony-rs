@@ -20,6 +20,18 @@ pub struct SonyDevice {
     pub packets_receiver: BroadcastReceiver<Packet>,
 }
 
+impl Clone for SonyDevice {
+    fn clone(&self) -> Self {
+        let packets_queries = self.packets_queries.clone();
+        let packets_receiver = self.packets_receiver.resubscribe();
+
+        Self {
+            packets_queries,
+            packets_receiver,
+        }
+    }
+}
+
 impl SonyDevice {
     pub fn new(device_stream: Stream) -> (Self, impl Future<Output = anyhow::Result<()>>) {
         let (sender, receiver) = mpsc::channel(1);

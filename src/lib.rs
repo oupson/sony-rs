@@ -14,6 +14,7 @@ use tracing::{error, warn};
 
 mod sony_device;
 
+#[derive(Clone)]
 pub struct Device {
     address: Address,
     sony_device: SonyDevice,
