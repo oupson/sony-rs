@@ -1,4 +1,4 @@
-use std::io::stdout;
+use std::{io::stdout, time::Duration};
 
 use bluer::Address;
 use sony_protocol::v1::{AncMode, AncPayload, Packet, PacketContent, PayloadCommand1};
@@ -14,11 +14,13 @@ use ratatui::{
         ExecutableCommand,
     },
     layout::{Constraint, Direction, Layout},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Span, Text},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Widget},
     Frame, Terminal,
 };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tui_logger::{TuiLoggerLevelOutput, TuiLoggerSmartWidget};
 
 enum UiDeviceBattery {
     Single(u8),
@@ -36,6 +38,7 @@ struct UiDevice {
 struct App {
     devices: Vec<UiDevice>,
     quit: bool,
+    show_logs: bool,
 }
 
 impl Default for App {
@@ -43,6 +46,7 @@ impl Default for App {
         Self {
             quit: false,
             devices: Vec::new(),
+            show_logs: false,
         }
     }
 }
@@ -63,6 +67,8 @@ impl App {
 
         let mut reader = crossterm::event::EventStream::new();
 
+        let mut ticker = tokio::time::interval(Duration::from_millis(16));
+
         while !self.quit {
             terminal.draw(|frame| self.draw(frame))?;
             let _ = tokio::select! {
@@ -77,6 +83,7 @@ impl App {
                 Some(evt) = reader.next() => {
                     self.on_crossterm_event(evt.unwrap()).await?;
                 }
+                _ = ticker.tick() => ()
             };
         }
 
@@ -207,6 +214,7 @@ impl App {
                         KeyCode::Char('q') => {
                             self.quit = true;
                         }
+                        KeyCode::Char('l') => self.show_logs = !self.show_logs,
                         KeyCode::Char('a') => {
                             if self.devices.len() > 0 {
                                 let device = &self.devices[0];
@@ -267,100 +275,156 @@ impl App {
         if self.devices.len() > 0 {
             let device = &self.devices[0];
 
-            let title_block = Block::default()
-                .borders(Borders::ALL)
-                .title(device.device.name())
-                .style(Style::default());
-
             let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                ])
-                .split(title_block.inner(area));
-
-            let block = Block::new()
-                .title(vec!["a".red(), Span::raw("nc Mode")])
-                .borders(Borders::ALL)
-                .style(Style::default());
-
-            let title = Paragraph::new(Text::raw(format!(
-                "{:?}",
-                device.anc_mode.as_ref().map(|f| f.anc_mode)
-            )))
-            .block(block);
-
+                .direction(Direction::Horizontal)
+                .constraints(if self.show_logs {
+                    [Constraint::Fill(1), Constraint::Fill(1)].as_slice()
+                } else {
+                    [Constraint::Fill(1)].as_slice()
+                })
+                .split(area);
             {
-                let mut constraints = if let Some(d) = &device.battery_device {
-                    match d {
-                        UiDeviceBattery::Single(_) => 1,
-                        UiDeviceBattery::Dual(_) => 2,
-                    }
-                } else {
-                    0
-                };
-                if device.battery_case.is_some() {
-                    constraints += 1;
-                }
+                let title_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(device.device.name())
+                    .style(Style::default());
+
                 let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints((0..constraints).map(|_| Constraint::Fill(1)))
-                    .split(chunks[1]);
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),
+                        Constraint::Length(3),
+                        Constraint::Length(3),
+                    ])
+                    .split(title_block.inner(chunks[0]));
+                frame.render_widget(title_block, area);
 
-                let index = if let Some(b) = &device.battery_device {
-                    match b {
-                        UiDeviceBattery::Single(level) => {
-                            let block = Block::new()
-                                .title("Single")
-                                .borders(Borders::ALL)
-                                .style(Style::default());
-                            let text = Paragraph::new(Text::raw(format!("{}", level))).block(block);
-                            frame.render_widget(text, chunks[0]);
-                            1
-                        }
-                        UiDeviceBattery::Dual((left, right)) => {
-                            let block = Block::new()
-                                .title("Left")
-                                .borders(Borders::ALL)
-                                .style(Style::default());
-                            let text = Paragraph::new(Text::raw(format!("{}", left))).block(block);
-                            frame.render_widget(text, chunks[0]);
+                let block = Block::new()
+                    .title(vec!["a".red(), Span::raw("nc Mode")])
+                    .borders(Borders::ALL)
+                    .style(Style::default());
 
-                            let block = Block::new()
-                                .title("Right")
-                                .borders(Borders::ALL)
-                                .style(Style::default());
-                            let text = Paragraph::new(Text::raw(format!("{}", right))).block(block);
-                            frame.render_widget(text, chunks[1]);
-                            2
+                let title = Paragraph::new(Text::raw(format!(
+                    "{:?}",
+                    device.anc_mode.as_ref().map(|f| f.anc_mode)
+                )))
+                .block(block);
+                frame.render_widget(title, chunks[0]);
+                {
+                    let mut constraints = if let Some(d) = &device.battery_device {
+                        match d {
+                            UiDeviceBattery::Single(_) => 1,
+                            UiDeviceBattery::Dual(_) => 2,
                         }
+                    } else {
+                        0
+                    };
+                    if device.battery_case.is_some() {
+                        constraints += 1;
                     }
-                } else {
-                    0
-                };
+                    let chunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints((0..constraints).map(|_| Constraint::Fill(1)))
+                        .split(chunks[1]);
 
-                if let Some(case) = &device.battery_case {
-                    let block = Block::new()
-                        .title("Case")
-                        .borders(Borders::ALL)
-                        .style(Style::default());
-                    let text = Paragraph::new(Text::raw(format!("{}", case))).block(block);
-                    frame.render_widget(text, chunks[index]);
+                    let index = if let Some(b) = &device.battery_device {
+                        match b {
+                            UiDeviceBattery::Single(level) => {
+                                let block = Block::new()
+                                    .title("Single")
+                                    .borders(Borders::ALL)
+                                    .style(Style::default());
+                                let text =
+                                    Paragraph::new(Text::raw(format!("{}", level))).block(block);
+                                frame.render_widget(text, chunks[0]);
+                                1
+                            }
+                            UiDeviceBattery::Dual((left, right)) => {
+                                let block = Block::new()
+                                    .title("Left")
+                                    .borders(Borders::ALL)
+                                    .style(Style::default());
+                                let text =
+                                    Paragraph::new(Text::raw(format!("{}", left))).block(block);
+                                frame.render_widget(text, chunks[0]);
+
+                                let block = Block::new()
+                                    .title("Right")
+                                    .borders(Borders::ALL)
+                                    .style(Style::default());
+                                let text =
+                                    Paragraph::new(Text::raw(format!("{}", right))).block(block);
+                                frame.render_widget(text, chunks[1]);
+                                2
+                            }
+                        }
+                    } else {
+                        0
+                    };
+
+                    if let Some(case) = &device.battery_case {
+                        let block = Block::new()
+                            .title("Case")
+                            .borders(Borders::ALL)
+                            .style(Style::default());
+                        let text = Paragraph::new(Text::raw(format!("{}", case))).block(block);
+                        frame.render_widget(text, chunks[index]);
+                    }
                 }
             }
-
-            frame.render_widget(title, chunks[0]);
-            frame.render_widget(title_block, area);
+            if self.show_logs {
+                let widget = TuiLoggerSmartWidget::default()
+                    .style_error(Style::default().fg(Color::Red))
+                    .style_debug(Style::default().fg(Color::Green))
+                    .style_warn(Style::default().fg(Color::Yellow))
+                    .style_trace(Style::default().fg(Color::Magenta))
+                    .style_info(Style::default().fg(Color::Cyan))
+                    .output_separator(':')
+                    .output_level(Some(TuiLoggerLevelOutput::Abbreviated))
+                    .output_target(true)
+                    .output_file(false)
+                    .output_line(false);
+                frame.render_widget(widget, chunks[1]);
+            }
         } else {
-            frame.render_widget(Text::raw("No device"), area)
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(if self.show_logs {
+                    [Constraint::Fill(1), Constraint::Fill(1)].as_slice()
+                } else {
+                    [Constraint::Fill(1)].as_slice()
+                })
+                .split(area);
+
+            frame.render_widget(Text::raw("No device"), chunks[0]);
+
+            if self.show_logs {
+                let widget = TuiLoggerSmartWidget::default()
+                    .style_error(Style::default().fg(Color::Red))
+                    .style_debug(Style::default().fg(Color::Green))
+                    .style_warn(Style::default().fg(Color::Yellow))
+                    .style_trace(Style::default().fg(Color::Magenta))
+                    .style_info(Style::default().fg(Color::Cyan))
+                    .output_separator(':')
+                    .output_level(Some(TuiLoggerLevelOutput::Abbreviated))
+                    .output_target(true)
+                    .output_file(false)
+                    .output_line(false);
+                frame.render_widget(widget, chunks[1]);
+            }
         }
     }
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::registry()
+        .with(tui_logger::tracing_subscriber_layer())
+        .init();
+    tui_logger::set_default_level(log::LevelFilter::Trace);
+
+    tracing::trace!("fo");
+
     let mut app = App::default();
     app.run().await?;
     Ok(())
