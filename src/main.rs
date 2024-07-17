@@ -1,10 +1,10 @@
 use std::{io::stdout, time::Duration};
 
 use bluer::Address;
-use sony_protocol::v1::{AncMode, AncPayload, Packet, PacketContent, PayloadCommand1};
-use sony_rs::{Device, DeviceEvent};
-use tokio_stream::{wrappers::BroadcastStream, StreamExt, StreamMap};
-use tracing::debug;
+use device_stream::DeviceStream;
+use sony_protocol::v1::{AncMode, AncPayload, PacketContent, PayloadCommand1};
+use sony_rs::Device;
+use tokio_stream::StreamExt;
 
 use ratatui::{
     backend::CrosstermBackend,
@@ -16,18 +16,20 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     text::{Span, Text},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tui_logger::{TuiLoggerLevelOutput, TuiLoggerSmartWidget};
+
+mod device_stream;
 
 enum UiDeviceBattery {
     Single(u8),
     Dual((u8, u8)),
 }
 
-struct UiDevice {
+pub struct UiDevice {
     address: Address,
     device: Device,
     anc_mode: Option<AncPayload>,
@@ -36,34 +38,27 @@ struct UiDevice {
 }
 
 struct App {
-    devices: Vec<UiDevice>,
+    stream: device_stream::DeviceStream,
     quit: bool,
     show_logs: bool,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub async fn new() -> Self {
+        let sony_explorer = sony_rs::DeviceExplorer::start();
+
         Self {
             quit: false,
-            devices: Vec::new(),
             show_logs: false,
+            stream: DeviceStream::new(sony_explorer),
         }
     }
-}
-
-impl App {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         stdout().execute(EnterAlternateScreen)?;
         enable_raw_mode()?;
 
         let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         terminal.clear()?;
-
-        let mut event_streams = StreamMap::new();
-
-        let sony_explorer = sony_rs::DeviceExplorer::start();
-
-        let mut device_stream = sony_explorer.device_stream;
 
         let mut reader = crossterm::event::EventStream::new();
 
@@ -72,14 +67,7 @@ impl App {
         while !self.quit {
             terminal.draw(|frame| self.draw(frame))?;
             let _ = tokio::select! {
-                Some(event) = device_stream.recv() => {
-                    self.handle_explorer_event(event, &mut event_streams).await?;
-                }
-                Some((address, event)) = event_streams.next() => {
-                    if let Ok(packet) = event {
-                        self.handle_device_event(address, packet)?;
-                    }
-                }
+                Some(event) = self.stream.next() => (),
                 Some(evt) = reader.next() => {
                     self.on_crossterm_event(evt.unwrap()).await?;
                 }
@@ -89,120 +77,6 @@ impl App {
 
         stdout().execute(LeaveAlternateScreen)?;
         disable_raw_mode()?;
-        Ok(())
-    }
-
-    async fn handle_explorer_event(
-        &mut self,
-        event: DeviceEvent,
-        event_streams: &mut StreamMap<Address, BroadcastStream<Packet>>,
-    ) -> anyhow::Result<()> {
-        debug!("{:?}", event);
-        match event {
-            sony_rs::DeviceEvent::DeviceAdded(d) => {
-                let address = d.address();
-
-                event_streams.insert(
-                    address,
-                    tokio_stream::wrappers::BroadcastStream::new(
-                        d.as_ref().packets_receiver.resubscribe(),
-                    ),
-                );
-
-                {
-                    let d = d.clone();
-                    self.devices.push(UiDevice {
-                        address,
-                        device: d,
-                        anc_mode: None,
-                        battery_device: None,
-                        battery_case: None,
-                    });
-                }
-
-                tokio::spawn(async move {
-                    d.as_ref()
-                        .send(PacketContent::Command1(
-                            PayloadCommand1::AmbientSoundControlGet,
-                        ))
-                        .await
-                        .unwrap();
-
-                    d.as_ref()
-                        .send(PacketContent::Command1(
-                            PayloadCommand1::BatteryLevelRequest(
-                                sony_protocol::v1::BatteryType::Single,
-                            ),
-                        ))
-                        .await
-                        .unwrap();
-
-                    d.as_ref()
-                        .send(PacketContent::Command1(
-                            PayloadCommand1::BatteryLevelRequest(
-                                sony_protocol::v1::BatteryType::Dual,
-                            ),
-                        ))
-                        .await
-                        .unwrap();
-
-                    d.as_ref()
-                        .send(PacketContent::Command1(
-                            PayloadCommand1::BatteryLevelRequest(
-                                sony_protocol::v1::BatteryType::Case,
-                            ),
-                        ))
-                        .await
-                        .unwrap();
-                });
-            }
-            sony_rs::DeviceEvent::DeviceRemoved(_) => todo!(),
-        }
-        Ok(())
-    }
-
-    fn handle_device_event(&mut self, address: Address, event: Packet) -> anyhow::Result<()> {
-        match event.content {
-            PacketContent::Command1(c) => match c {
-                PayloadCommand1::AmbientSoundControlRet(n)
-                | PayloadCommand1::AmbientSoundControlNotify(n) => {
-                    self.devices
-                        .iter_mut()
-                        .find(|c| c.address == address)
-                        .unwrap()
-                        .anc_mode = Some(n);
-                }
-                PayloadCommand1::BatteryLevelReply(b) | PayloadCommand1::BatteryLevelNotify(b) => {
-                    let device = self
-                        .devices
-                        .iter_mut()
-                        .find(|c| c.address == address)
-                        .unwrap();
-                    match b {
-                        sony_protocol::v1::BatteryState::Single {
-                            level,
-                            is_charging: _,
-                        } => device.battery_device = Some(UiDeviceBattery::Single(level)),
-                        sony_protocol::v1::BatteryState::Case {
-                            level,
-                            is_charging: _,
-                        } => device.battery_case = Some(level),
-                        sony_protocol::v1::BatteryState::Dual {
-                            level_left,
-                            is_left_charging: _,
-                            level_right,
-                            is_right_charging: _,
-                        } => {
-                            device.battery_device =
-                                Some(UiDeviceBattery::Dual((level_left, level_right)))
-                        }
-                    }
-                }
-                _ => (),
-            },
-            _ => (),
-        }
-
         Ok(())
     }
 
@@ -216,8 +90,8 @@ impl App {
                         }
                         KeyCode::Char('l') => self.show_logs = !self.show_logs,
                         KeyCode::Char('a') => {
-                            if self.devices.len() > 0 {
-                                let device = &self.devices[0];
+                            if self.stream.len() > 0 {
+                                let device = &self.stream[0];
 
                                 let new_mode = if let Some(anc_mode) = &device.anc_mode {
                                     match anc_mode.anc_mode {
@@ -272,8 +146,8 @@ impl App {
 
     fn draw(&self, frame: &mut Frame) {
         let area = frame.size();
-        if self.devices.len() > 0 {
-            let device = &self.devices[0];
+        if self.stream.len() > 0 {
+            let device = &self.stream[0];
 
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -425,7 +299,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::trace!("fo");
 
-    let mut app = App::default();
+    let mut app = App::new().await;
     app.run().await?;
     Ok(())
 }

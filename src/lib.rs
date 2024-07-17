@@ -153,7 +153,5 @@ async fn start_communication(channel: Stream) -> anyhow::Result<SonyDevice> {
 
     _ = device.packets_receiver.recv().await?;
 
-    tracing::debug!("foo");
-
     Ok(device)
 }
