@@ -1,7 +1,11 @@
-use std::{
-    ops::{Not, Range},
-    time::{Duration, Instant},
-};
+use std::ops::{Not, Range};
+
+// TODO: maybe find a way to not depend on time api
+#[cfg(not(target_family = "wasm"))]
+use std::time::{Duration, Instant};
+
+#[cfg(target_family = "wasm")]
+use web_time::{Duration, Instant};
 
 use tracing::{trace, warn};
 use v1::{Packet, PacketContent};
